@@ -12,13 +12,16 @@ from sys import exit
 import os
 from pathlib import Path
 import numpy as np
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # parameters
 ATTEMPTS   =  5 # number of attempts before giving up operation
 BATCH_SIZE = 50 # batch size for files to download and process
 
 # paths
-PROJ_ROOT = os.getenv('PROJ_ROOT', '/explore/nobackup/people/dgli/Clone')
+PROJ_ROOT = os.getenv('PROJ_ROOT')
 DATA_PATH = f'{PROJ_ROOT}/Data/TROPOMI/S5P_L2__SO2____HiR'
 TEMP_PATH = f'{DATA_PATH}/temp'
 
