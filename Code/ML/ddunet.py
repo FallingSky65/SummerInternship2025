@@ -141,7 +141,7 @@ class DUNetB(nn.Module):
 # in: image (B, 1, 320, 320)
 # out: denoised image (B, 1, 320, 320)
 class DDUNet(nn.Module):
-    def __init__(self, nChans=1, nblocks=5, ch=64):
+    def __init__(self, nChans=1, nblocks=3, ch=24):
         super().__init__()
         self.nblocks = nblocks
         self.preblock = nn.Sequential(

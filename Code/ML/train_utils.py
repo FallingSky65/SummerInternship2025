@@ -15,6 +15,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
+import gc
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -64,19 +65,19 @@ def get_dataloaders(rank, world_size, data_train, data_valid, data_test, p):
                                        rank=rank, shuffle=True)
         train_loader = DataLoader(
             train_dset, batch_size=p.BATCH_SIZE, sampler=train_sampler,
-            num_workers=2, pin_memory=True)
+            num_workers=2, pin_memory=False)
         valid_loader = DataLoader(valid_dset, batch_size=p.BATCH_SIZE,
-                shuffle=False, num_workers=2, pin_memory=True)
+                shuffle=False, num_workers=2, pin_memory=False)
         test_loader = DataLoader(test_dset, batch_size=p.BATCH_SIZE,
-                shuffle=False, num_workers=2, pin_memory=True)
+                shuffle=False, num_workers=2, pin_memory=False)
     else:
         train_sampler = None
         train_loader = DataLoader(train_dset, batch_size=p.BATCH_SIZE,
-                pin_memory=True)
+                pin_memory=False)
         valid_loader = DataLoader(valid_dset, batch_size=p.BATCH_SIZE,
-                shuffle=False, pin_memory=True)
+                shuffle=False, pin_memory=False)
         test_loader = DataLoader(test_dset, batch_size=p.BATCH_SIZE,
-                shuffle=False, pin_memory=True)
+                shuffle=False, pin_memory=False)
 
     return train_loader, train_sampler, valid_loader, test_loader
 
@@ -85,13 +86,30 @@ def evaluate(model, dataloader, device, criterion):
     model.eval()
     test_loss = 0.0
     with torch.no_grad():
-        for batch_x, batch_y in dataloader:
+        for batch_x, batch_y in tqdm(dataloader):
             batch_x = batch_x.to(device, non_blocking=True)
             batch_y = batch_y.to(device, non_blocking=True)
             outputs = model(batch_x)
             loss = criterion(outputs, batch_y)
             test_loss += loss.item()
     return test_loss / len(dataloader)
+
+
+def print_model_size(model):
+    trainable_params = 0
+    total_params = 0
+    param_size = 0
+    for param in model.parameters():
+        param_size += param.numel() * param.element_size()
+        if param.requires_grad:
+            trainable_params += param.numel()
+        total_params += param.numel()
+    buffer_size = 0
+    for buffer in model.buffers():
+        buffer_size += buffer.numel() * buffer.element_size()
+    size_all = param_size + buffer_size
+    size_MB = size_all / (1024 ** 2)
+    print(f'model has {trainable_params}/{total_params} trainable parameters and is {size_MB:.2f} MB')
 
 
 def train(rank, world_size, data_train, data_valid, data_test, p):
@@ -105,11 +123,12 @@ def train(rank, world_size, data_train, data_valid, data_test, p):
     if p.Checkpoint is not None:
         checkpoint = torch.load(p.Checkpoint)
     model = p.Model()
+    print_model_size(model)
     if p.Checkpoint is not None:
         model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(device)
     if world_size > 1:
-        model = DDP(model, device_ids=[rank])
+        model = DDP(model, device_ids=[rank], find_unused_parameters=True)
     criterion = p.Criterion().to(device)
     optimizer = optim.Adam(model.parameters(), lr=p.LEARNING_RATE)
     if p.Checkpoint is not None:
@@ -127,9 +146,11 @@ def train(rank, world_size, data_train, data_valid, data_test, p):
         total_loss = 0.0
 
         optimizer.zero_grad()
-        for step, (x, y) in tqdm(enumerate(train_loader)):
-            x = x.to(device, non_blocking=True)
-            y = y.to(device, non_blocking=True)
+        print(f'{torch.cuda.memory_allocated() / 1024**2:.2f} MB vram allocated')
+        print(f'{torch.cuda.memory_reserved() / 1024**2:.2f} MB vram reserved')
+        for step, (x, y) in enumerate(tqdm(train_loader, total=len(train_loader))):
+            x = x.to(device, non_blocking=False)
+            y = y.to(device, non_blocking=False)
 
             outputs = model(x)
             loss = criterion(outputs, y)
@@ -148,13 +169,13 @@ def train(rank, world_size, data_train, data_valid, data_test, p):
 
         if rank == 0:
             print(f'[epoch {epoch+1}] training loss: {train_loss:.6f}', flush=True)
-            valid_loss = evaluate(model.module, valid_loader, device, criterion)
-            test_loss = evaluate(model.module, test_loader, device, criterion)
+            valid_loss = evaluate(model, valid_loader, device, criterion)
+            test_loss = evaluate(model, test_loader, device, criterion)
             print(f'[epoch {epoch+1}] valid_loss: {valid_loss:.6f}', flush=True)
             print(f'[epoch {epoch+1}] test_loss: {test_loss:.6f}', flush=True)
 
             checkpoint = {
-                'model_state_dict': model.module.state_dict(),
+                'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'epoch': epoch+1,
                 'train_loss': train_loss,
@@ -170,7 +191,7 @@ def train(rank, world_size, data_train, data_valid, data_test, p):
 
 
 def spawn_train(p):
-    torch.cuda.empty_cache()
+    print(torch.cuda.memory_summary())
     world_size = torch.cuda.device_count()
     
     data_train, data_valid, data_test = split_dset(p.DATA_PATH, p.LOAD_FUNC)
@@ -178,6 +199,9 @@ def spawn_train(p):
     print(f'\ttrain: {data_train.shape}')
     print(f'\tvalid: {data_valid.shape}')
     print(f'\ttest: {data_test.shape}')
+    
+    torch.cuda.empty_cache()
+    gc.collect()
 
     if world_size > 1:
         print(f'{world_size} gpus detected', flush=True)

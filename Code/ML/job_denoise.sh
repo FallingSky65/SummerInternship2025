@@ -9,8 +9,8 @@ srun \
     --job-name=train_ddunet \
     --output=slurm_logs/denoise/output_%j.txt \
     --error=slurm_logs/denoise/error_%j.txt \
-    --time=24:00:00 \
-    --mem=160G \
+    --time=72:00:00 \
+    --mem=80G \
     --cpus-per-task=16 \
-    --gpus-per-node=2 \
+    --gpus-per-node=1 \
     python train_ddunet.py

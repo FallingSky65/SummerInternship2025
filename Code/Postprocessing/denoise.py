@@ -10,6 +10,7 @@ from tqdm import tqdm
 from matplotlib.colors import LogNorm
 import torch
 from dotenv import load_dotenv
+from os import getenv
 
 load_dotenv()
 

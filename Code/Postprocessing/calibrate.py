@@ -9,6 +9,7 @@ import numpy as np
 from tqdm.contrib.concurrent import thread_map
 import gc
 from dotenv import load_dotenv
+from os import getenv
 
 load_dotenv()
 

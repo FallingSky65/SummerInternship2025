@@ -33,12 +33,12 @@ if __name__ == '__main__':
         Checkpoint=None,
         DATA_PATH=ADDED_NOISE_PATH,
         LOAD_FUNC=load_denoise,
-        LEARNING_RATE=1e-6,
-        BATCH_SIZE=8,
-        BATCH_CHUNKS=8,
+        LEARNING_RATE=2e-5,
+        BATCH_SIZE=32,
+        BATCH_CHUNKS=4,
         EPOCH_START=0,
         EPOCH_END=256,
-        MASTER_PORT='42067',
+        MASTER_PORT='42767',
         SAVE_PATH=f'{PROJ_ROOT}/Models/denoise'
     )
     spawn_train(p)
